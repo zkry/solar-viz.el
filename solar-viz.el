@@ -37,23 +37,44 @@
 ;;
 ;; (solar-horizontal-coordinates time latitude longitude sunrise-flag)
 
-(defun solar-viz--sun-height-at-time (time)
-  "Return the solar altitude angle for TIME."
+(require 'solar)
+(require 'color)
+
+(defun solar-viz--sun-height-at-time (time &optional latitude longitude)
+  "Return the solar altitude angle for TIME for LATITUDE and LONGITUDE if provided."
   (let* ((date (car time))
-         (exact-local-noon (solar-exact-local-noon date))
-         (t0 (solar-julian-ut-centuries (car time)))
+         ;; (exact-local-noon (solar-exact-local-noon date))
+         (t0 (solar-julian-ut-centuries date))
          (solar-sidereal-time-greenwich-midnight (solar-sidereal-time t0)))
     (cadr (solar-horizontal-coordinates (list t0 (cadr time))
-                                        (calendar-latitude)
-                                        (calendar-longitude)
+                                        (or latitude (calendar-latitude))
+                                        (or longitude (calendar-longitude))
                                         nil))))
 
 (defvar solar-viz-daylight-mode-map
   (let ((map (make-sparse-keymap)))
     (prog1 map
       (suppress-keymap map)
-      (define-key map "q" #'quit-window)))
+      (define-key map "q" #'quit-window)
+      (define-key map "s" #'solar-viz-daylight-setup)
+      (define-key map "?" #'solar-viz-daylight-help)))
   "Keymap for solar-viz-daylight-mode.")
+
+(defun solar-viz-daylight-help ()
+  "Display help message for solar viz daylight buffer."
+  (interactive)
+  (message "q - quit; s - setup lat/lon/timezone; ? -help"))
+
+(defun solar-viz-daylight-setup ()
+  "Setup variables to worldmap and redisplay."
+  (interactive)
+  (let ((calendar-longitude (solar-get-number
+                             "Enter longitude (decimal fraction; + east, - west): "))
+        (calendar-latitude (solar-get-number
+                            "Enter latitude (decimal fraction; + north, - south): "))
+        (calendar-time-zone (solar-get-number
+                             "Enter difference from Coordinated Universal Time (in minutes): ")))
+    (solar-viz-daylight-display)))
 
 (defface solar-viz-daylight-face
   '((t :background "#B0DAE8"))
@@ -125,21 +146,118 @@
   (unless (eq major-mode 'solar-viz-daylight)
     (solar-viz-daylight-mode)))
 
+;;;; World map ;;;;;;;;;;;;
+
+(defvar solar-viz-worldmap-hour 18
+  "Hour for which to display worlmap.")
+
+(defvar solar-viz-worldmap-date-offset 0
+  "Date for which to display worldmap.")
+
+(defvar solar-viz-worldmap-mode-map
+  (let ((map (make-sparse-keymap)))
+    (prog1 map
+      (suppress-keymap map)
+      (define-key map "q" #'quit-window)
+      (define-key map "n" #'solar-viz-worldmap-next-hour)
+      (define-key map "p" #'solar-viz-worldmap-previous-hour)
+      (define-key map "s" #'solar-viz-worldmap-skip-days)
+      (define-key map "?" #'solar-viz-worldmap-help)))
+  "Keymap for solar-viz-daylight-mode.")
+
+(defun solar-viz-worldmap-help ()
+  "Display help for worldmap buffer."
+  (interactive)
+  (message "q - quit; s - skip days; n - next hour; p - previous hour; ? - help"))
+
+(defun solar-viz-worldmap-forward-days (offset)
+  "Skip ahead OFFSET days."
+  (interactive "nHow many days to skip: ")
+  (unless (integerp offset)
+    (error "Offset must be an integer"))
+  (setq solar-viz-worldmap-date-offset (+ solar-viz-worldmap-date-offset offset))
+  (solar-viz-worldmap-display))
+
+(defun solar-viz-worldmap-next-hour ()
+  "Increment worldmap time by one hour."
+  (interactive)
+  (when (> (1+ solar-viz-worldmap-hour) 24.0)
+    (setq solar-viz-worldmap-date-offset (1+ solar-viz-worldmap-date-offset)))
+  (setq solar-viz-worldmap-hour (mod (1+ solar-viz-worldmap-hour) 24.0))
+  (solar-viz-worldmap-display))
+
+(defun solar-viz-worldmap-previous-hour ()
+  "Decrement worldmap time by one hour."
+  (interactive)
+  (when (< (1- solar-viz-worldmap-hour) 0.0)
+    (setq solar-viz-worldmap-date-offset (1- solar-viz-worldmap-date-offset)))
+  (setq solar-viz-worldmap-hour (mod (+ (1- solar-viz-worldmap-hour) 24.0) 24.0))
+  (solar-viz-worldmap-display))
+
+(defun solar-viz-darken-by-height (base-color h)
+  "Return BASE-COLOR darkend according to H, where the night angle is darkend the most."
+  (let ((max-dark-percentage 20.0)
+        (night-angle -18.0))
+    (cond
+     ((> h 0) base-color)
+     ((< h night-angle) (color-darken-name base-color max-dark-percentage))
+     (t
+      (let ((darken-percentage (* (/ h night-angle) max-dark-percentage)))
+        (color-darken-name base-color darken-percentage))))))
+
+(defun solar-viz-worldmap-display ()
+  "Display the night/day worldmap."
+  (unless (equal (buffer-name (current-buffer))
+                 "*solar-viz-worldmap*")
+    (error "Must be in *solar-viz-worldmap* buffer"))
+  (unless (boundp 'solar-viz-map)
+    (require 'solar-viz-map))
+  (let ((inhibit-read-only t))
+    (erase-buffer)
+    (insert (calendar-date-string (calendar-current-date solar-viz-worldmap-date-offset))
+            "  " (solar-viz-hour-to-string solar-viz-worldmap-hour) "\n")
+    (dotimes (dlat (- (/ 180 5) 10))
+      (dotimes (dlon (/ 360 5))
+        (let* ((lat (- 90 (* dlat 7)))
+               (lon (+ -180 (* dlon 5)))
+               ;; to get the angles to line up with the map I had to
+               ;; do multiply the latitude by a different scale. The
+               ;; map I made must have mistakes in it's division of lat/lon.
+               (h (solar-viz--sun-height-at-time `(,(calendar-current-date solar-viz-worldmap-date-offset) ,solar-viz-worldmap-hour)
+                                                 lat lon)))
+          (insert (propertize " " 'face `(:background ,(solar-viz-darken-by-height (solar-viz-map-color (+ 4 dlat) dlon) h))))))
+      (insert "\n"))))
+
+(defun solar-viz-current-hour ()
+  "Return the current time as a floating point number."
+  (let ((decoded-time (decode-time)))
+    (+ (nth 2 decoded-time)
+       (/ (float (nth 1 decoded-time)) 60.0))))
+
+(defun solar-viz-hour-to-string (hour)
+  "Return the string representation of HOUR."
+  (format "%02d:%02d" (floor hour) (floor (* 60 (- hour (floor hour))))))
+
+(defun solar-viz-worldmap-mode ()
+  "Major mode for viewing worldmap of night and day."
+  (interactive)
+  (kill-all-local-variables)
+  (use-local-map solar-viz-worldmap-mode-map)
+  (setq mode-name "solar-viz-worldmap"
+        major-mode 'solar-viz-worldmap
+        buffer-read-only t
+        solar-viz-worldmap-hour (solar-viz-current-hour)
+        solar-viz-worldmap-date-offset 0
+        truncate-lines t)
+  (buffer-disable-undo)
+  (solar-viz-worldmap-display))
+
+(defun solar-viz-worldmap ()
+  "View a current daylight map of the world."
+  (interactive)
+  (switch-to-buffer "*solar-viz-worldmap*")
+  (unless (eq major-mode 'solar-viz-worldmap)
+    (solar-viz-worldmap-mode)))
+
 (provide 'solar-viz)
-
-(solar-julian-ut-centuries '(12 20 2022))
-(solar-horizontal-coordinates '(0.22971937029431896 15.209)
-                              (calendar-latitude)
-                              (calendar-longitude)
-                              nil)
-(solar-horizontal-coordinates '(0.22966461327857632 15.209)
-                              (calendar-latitude)
-                              (calendar-longitude)
-                              nil)
-
-;; (52.499 13.436)
-(setq calendar-latitude 52.499)
-(setq calendar-longitude 13.436)
-
-;; ????? (12 20 2022) (0.22966461327857632 15.209) = 10.521829 [24 times]
 ;;; solar-viz.el ends here
