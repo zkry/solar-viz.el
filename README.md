@@ -1,4 +1,4 @@
-# solar-viz.el: Vizualization of celestial phenomenon in Emacs
+# solar-viz.el: Various visualizations of day and night 
 
 ![solar-viz.el screenshot](/doc/screenshot.png)
 
