@@ -1,4 +1,4 @@
-# solar-viz.el: Various visualizations of day and night 
+# solar-viz.el: Various sunrise/sunset visualizations
 
 ![solar-viz.el screenshot](/doc/screenshot.png)
 
