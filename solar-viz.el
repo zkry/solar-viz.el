@@ -161,7 +161,7 @@
       (define-key map "q" #'quit-window)
       (define-key map "n" #'solar-viz-worldmap-next-hour)
       (define-key map "p" #'solar-viz-worldmap-previous-hour)
-      (define-key map "s" #'solar-viz-worldmap-skip-days)
+      (define-key map "s" #'solar-viz-worldmap-forward-days)
       (define-key map "?" #'solar-viz-worldmap-help)))
   "Keymap for solar-viz-daylight-mode.")
 
