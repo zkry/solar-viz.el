@@ -1,6 +1,7 @@
 # solar-viz.el: Various sunrise/sunset visualizations
 
 ![solar-viz.el screenshot](/doc/screenshot.png)
+![solar-viz.el animation](/doc/solar-viz.gif)
 
 solar-viz.el provides two different visualizations of day and night.
 The first is `solar-viz-daylight` which shows a timeline of the amount
@@ -16,7 +17,7 @@ Put the `solar-viz.el` and `solar-viz-map.el` into your loadpath and call `(requ
 
 The commands will run based off of the variables `calendar-latitude`, `calendar-longitude`, and `calendar-time-zone`. Customizing these variables will change how the visualizations are initially drawn. Some visualizations (the `solar-viz-daylight` for now) allow you to temporarily change these via an in-mode command.
 
-# Commands
+# Commnds
 
 - `solar-viz-daylight` : Shows a line indicating brightness of the sky with hours on the x-axis and day on the y-axis. Commands:
   - `s` : redraw the timeline for a specified latitude/longitude/time-zone.
